@@ -2,8 +2,15 @@
 # encoding: utf-8
 # author: sylvain rouquette
 
-from colorama.ansi import clear_screen
-import colorama
+try:
+    from colorama.ansi import clear_screen
+    import colorama
+except:
+    print('''
+you need to install the requirements first:
+pip install -r requirements.txt
+
+''')
 from datetime import datetime, timedelta
 import json
 import os
