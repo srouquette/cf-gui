@@ -1,1 +1,1 @@
-# cf-gui
+pip install -r requirements.txt
