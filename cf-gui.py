@@ -21,6 +21,7 @@ import time
 
 
 COMMANDS = {
+    'env': 'cf env {name}',
     'logs': 'cf logs {name}',
     'logs recent': 'cf logs --recent {name}',
     'push': 'cf push {name} -d {domain}',
@@ -74,7 +75,7 @@ class CommandExecutor:
             with open('cf-command.sh', 'wt') as f:
                 command = ['#!/usr/bin/env bash', command]
                 f.write('\n'.join(command))
-        if 'target' in command:
+        if not 'push' in command and not 'refresh' in command:
             cmd = ['cf']
             cmd.extend(command[3:].split(' '))
             self.popen(cmd)
@@ -96,17 +97,17 @@ class CommandExecutor:
 
 
 class CfCommandExecutor(CommandExecutor):
-    def popen(self, command):
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, universal_newlines=True)
-        return process.communicate()[0].split('\n')
+    def popen(self, command, **kwargs):
+        process = subprocess.Popen(command, universal_newlines=True, **kwargs)
+        return process.communicate()[0]
     def target(self):
-        return self.popen(['cf', 'target'])
+        return self.popen(['cf', 'target'], stdout=subprocess.PIPE).split('\n')
     def spaces(self):
-        return self.popen(['cf', 'spaces'])
+        return self.popen(['cf', 'spaces'], stdout=subprocess.PIPE).split('\n')
     def routes(self):
-        return self.popen(['cf', 'routes'])
+        return self.popen(['cf', 'routes'], stdout=subprocess.PIPE).split('\n')
     def services(self):
-        return self.popen(['cf', 'apps'])
+        return self.popen(['cf', 'apps'], stdout=subprocess.PIPE).split('\n')
 
 
 class Settings:
@@ -115,7 +116,7 @@ class Settings:
     PATTERNS = {
         'user'   : re.compile(r'^User:.*\s+([^\s]+)'),
         'space'  : re.compile(r'^Space:.*\s+([^\s]+)'),
-        'domain' : re.compile(r'^.*healthcloud[^\s]+\s+([^\s]+)'),
+        'domain' : re.compile(r'^.*healthcloud[^\s]?\s+([^\s]+)'),
         'check_space': re.compile(r'^Getting.*space\s+([^\s]+)\s+'),
         'service': re.compile(r'^([^\s]+)(\s+\w+\s+)(.{3})(\s+[^\s]+\s+[^\s]+\s+)([^\s]+)')  # (name)(ignore)(status)(ignore)(routes)
     }
