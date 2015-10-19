@@ -75,55 +75,53 @@ class CommandExecutor:
                 command = ['#!/usr/bin/env bash', command]
                 f.write('\n'.join(command))
         if 'target' in command:
-            subprocess.Popen(['cf', command[3:]])
+            cmd = ['cf']
+            cmd.extend(command[3:].split(' '))
+            self.popen(cmd)
+
+    def popen(self):
+        pass
 
     def target(self):
-        return '''
-Cloud Foundry
-Login: my_email@gmail.com
-Space: JaegerInt
-Domain: jaeger.int.domain.com
-'''.splitlines()
+        return ''
 
     def spaces(self):
-        return '''
-JaegerInt
-ImagingDev
-'''.splitlines()
+        return ''
+
+    def routes(self):
+        return ''
 
     def services(self):
-        return '''
-Getting apps in org domain.com/ space JaegerInt as syl...
-OK
-
-name                         requested state   instances   memory   disk   urls
-group_builder                started           ?/1         512M     1G     group_builder.jaeger.int.domain.com
-volume_controller            started           ?/1         384M     1G     volume_controller.jaeger.int.domain.com
-mpr_rendering                started           1/1         384M     1G     mpr_rendering.jaeger.int.domain.com
-'''.splitlines()
+        return ''
 
 
 class CfCommandExecutor(CommandExecutor):
+    def popen(self, command):
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, universal_newlines=True)
+        return process.communicate()[0].split('\n')
     def target(self):
-        return subprocess.Popen(['cf', 'target'], stdout=subprocess.PIPE)
+        return self.popen(['cf', 'target'])
     def spaces(self):
-        return subprocess.Popen(['cf', 'spaces'], stdout=subprocess.PIPE)
+        return self.popen(['cf', 'spaces'])
+    def routes(self):
+        return self.popen(['cf', 'routes'])
     def services(self):
-        return subprocess.Popen(['cf', 'apps'], stdout=subprocess.PIPE)
+        return self.popen(['cf', 'apps'])
 
 
 class Settings:
     FILE = os.path.sep.join((os.path.expanduser('~'), 'cf-gui.json'))
     TIME_FORMAT = '%Y-%m-%d %H:%M'
     PATTERNS = {
-        'user'   : re.compile(r'^Login.*\s+(.*)\s?'),
-        'space'  : re.compile(r'^Space.*\s+(.*)\s?'),
-        'domain' : re.compile(r'^Domain.*\s+(.*)\s?'),
+        'user'   : re.compile(r'^User:.*\s+([^\s]+)'),
+        'space'  : re.compile(r'^Space:.*\s+([^\s]+)'),
+        'domain' : re.compile(r'^.*healthcloud[^\s]+\s+([^\s]+)'),
         'check_space': re.compile(r'^Getting.*space\s+([^\s]+)\s+'),
         'service': re.compile(r'^([^\s]+)(\s+\w+\s+)(.{3})(\s+[^\s]+\s+[^\s]+\s+)([^\s]+)')  # (name)(ignore)(status)(ignore)(routes)
     }
 
     def __init__(self, executor):
+        self.updated = False
         self.json = {}
         try:
             with open(Settings.FILE) as f:
@@ -138,6 +136,7 @@ class Settings:
 
     @space_name.setter
     def space_name(self, value):
+        self.updated = True
         self.json['target']['space'] = value
 
     @property
@@ -159,6 +158,9 @@ class Settings:
         if not 'spaces' in self.json:
             print('updating spaces...')
             self.update_spaces(executor.spaces())
+        if not 'domain' in self.space:
+            print('updating domain...')
+            self.update_domain(executor.routes())
         if not 'services' in self.space or not self.check_space_timestamp():
             print('updating space %s...' % self.space_name)
             self.update_space(executor.services())
@@ -171,16 +173,20 @@ class Settings:
         return True
 
     def save(self):
+        if not self.updated:
+            return
+        print('updated')
         with open(Settings.FILE, 'wt') as f:
             json.dump(self.json, f)
 
     def update_target(self, lines):
+        self.updated = True
         result = {}
         def match_and_update(key, line):
             m = Settings.PATTERNS[key].match(line)
             if m:
                 result[key] = m.group(1)
-        target_info = ('user', 'space', 'domain')
+        target_info = ('user', 'space')
         for line in lines:
             for key in target_info:
                 if not key in result:
@@ -191,20 +197,36 @@ class Settings:
             self.json['target'] = result
 
     def update_spaces(self, lines):
+        self.updated = True
         if not 'spaces' in self.json:
             self.json['spaces'] = {}
+        spaces_definition = False
         for line in lines:
-            if line.strip() and not line in self.json['spaces']:
+            if not spaces_definition:
+                if line.startswith('name'):
+                    spaces_definition = True
+                continue
+            line = line.strip()
+            if line and not line in self.json['spaces']:
                 self.json['spaces'][line] = {}
 
+    def update_domain(self, lines):
+        self.updated = True
+        for line in lines:
+            m = Settings.PATTERNS['domain'].match(line)
+            if not m:
+                continue
+            self.space['domain'] = m.group(1)
+            break
+
     def update_space(self, lines):
+        self.updated = True
         for line in lines:
             m = Settings.PATTERNS['check_space'].match(line)
             if m and self.space_name != m.group(1):
                 raise Exception("target doesn't match current space: %s != %s" % (self.space_name, m.group(1)))
         services_definition = False
         services = []
-        self.space['domain'] = self.json['target']['domain']
         for line in lines:
             if not services_definition:
                 if line.startswith('name'):
@@ -221,6 +243,9 @@ class Settings:
         self.space['services'] = services
         self.space['timestamp'] = str(datetime.now().strftime(Settings.TIME_FORMAT))
 
+    def refresh(self):
+        del self.space['timestamp']
+        self.updated = True
 
 class Menu:
     def __init__(self, listener, items, command):
@@ -254,8 +279,7 @@ class Menu:
         return '\n'.join(result)
 
     def activate(self):
-        self.listener.execute_command(self.command, self.items[self.current])
-        return True
+        return self.listener.execute_command(self.command, self.items[self.current])
 
 
 class MenuMain(Menu):
@@ -289,10 +313,11 @@ class App:
         if 'target' in command:
             self.settings.space_name = args['name']
         self.executor.execute(command.format(**args))
+        return True
 
     def execute_main(self, command):
         if 'refresh' in command:
-            del self.settings.space['timestamp']
+            self.settings.refresh()
             return True
         elif 'target' in command:
             self.menu = self.menu_factory.create(self, settings.spaces, command)
@@ -331,7 +356,7 @@ class App:
 
 if __name__ == '__main__':
     colorama.init()
-    executor = CommandExecutor()
+    executor = CfCommandExecutor()
     settings = Settings(executor)
     app = App(settings, MenuFactory(), executor)
     app.run()
