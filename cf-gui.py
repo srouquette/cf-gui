@@ -18,6 +18,10 @@ import re
 import subprocess
 import sys
 import time
+import gettext
+
+t = gettext.translation('cf-gui', 'locale', fallback=True, languages=['en'])
+t.install()
 
 
 COMMANDS = {
@@ -84,16 +88,31 @@ class CommandExecutor:
         pass
 
     def target(self):
-        return ''
+        return '''
+User: syl
+Space: Jaeger
+'''.splitlines()
 
     def spaces(self):
-        return ''
+        return '''
+name
+Jaeger
+Imaging
+'''.splitlines()
 
     def routes(self):
-        return ''
+        return '''
+healthcloud          jaeger.domain.com
+'''.splitlines()
 
     def services(self):
-        return ''
+        return '''
+Getting apps in org domain.com/ space Jaeger as syl...
+name                         requested state   instances   memory   disk   urls
+group_builder                started           1/1         512M     1G     group_builder.jaeger.domain.com
+volume_controller            started           ?/1         384M     1G     volume_controller.jaeger.domain.com
+mpr_rendering                started           0/1         384M     1G     mpr_rendering.jaeger.domain.com
+'''.splitlines()
 
 
 class CfCommandExecutor(CommandExecutor):
@@ -114,10 +133,10 @@ class Settings:
     FILE = os.path.sep.join((os.path.expanduser('~'), 'cf-gui.json'))
     TIME_FORMAT = '%Y-%m-%d %H:%M'
     PATTERNS = {
-        'user'   : re.compile(r'^User:.*\s+([^\s]+)'),
-        'space'  : re.compile(r'^Space:.*\s+([^\s]+)'),
+        'user'   : re.compile(r'^%s:.*\s+([^\s]+)' % _('User')),
+        'space'  : re.compile(r'^%s:.*\s+([^\s]+)' % _('Space')),
         'domain' : re.compile(r'^.*healthcloud[^\s]?\s+([^\s]+)'),
-        'check_space': re.compile(r'^Getting.*space\s+([^\s]+)\s+'),
+        'check_space': re.compile(r'^%s.*%s\s+([^\s]+)\s+' % (_('Getting'), _('space'))),
         'service': re.compile(r'^([^\s]+)(\s+\w+\s+)(.{3})(\s+[^\s]+\s+[^\s]+\s+)([^\s]+)')  # (name)(ignore)(status)(ignore)(routes)
     }
 
@@ -169,7 +188,7 @@ class Settings:
     def check_space_timestamp(self):
         if not 'timestamp' in self.space:
             return False
-        if datetime.now() - datetime.strptime(self.space['timestamp'], Settings.TIME_FORMAT) > timedelta(days=1):
+        if datetime.now() - datetime.strptime(self.space['timestamp'], Settings.TIME_FORMAT) > timedelta(hours=8):
             return False
         return True
 
@@ -204,7 +223,7 @@ class Settings:
         spaces_definition = False
         for line in lines:
             if not spaces_definition:
-                if line.startswith('name'):
+                if line.startswith(_('name')):
                     spaces_definition = True
                 continue
             line = line.strip()
@@ -230,7 +249,7 @@ class Settings:
         services = []
         for line in lines:
             if not services_definition:
-                if line.startswith('name'):
+                if line.startswith(_('name')):
                     services_definition = True
                 continue
             m = Settings.PATTERNS['service'].match(line)
