@@ -89,7 +89,7 @@ class CommandExecutor:
 
     def target(self):
         return '''
-User: syl
+User: Syl
 Space: Jaeger
 '''.splitlines()
 
@@ -215,6 +215,8 @@ class Settings:
             self.json['target'] = dict(self.json['target'], **result)
         else:
             self.json['target'] = result
+        if not 'space' in self.json['target']:
+            raise Exception('target not found.', lines)
 
     def update_spaces(self, lines):
         self.updated = True
@@ -238,6 +240,8 @@ class Settings:
                 continue
             self.space['domain'] = m.group(1)
             break
+        if not 'domain' in self.space:
+            raise Exception('domain not found.', lines)
 
     def update_space(self, lines):
         self.updated = True
@@ -262,6 +266,8 @@ class Settings:
             })
         self.space['services'] = services
         self.space['timestamp'] = str(datetime.now().strftime(Settings.TIME_FORMAT))
+        if len(services) == 0:
+            raise Exception('services not found.', lines)
 
     def refresh(self):
         del self.space['timestamp']
